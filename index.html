@@ -2,13 +2,14 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>吃豆人游戏 - Pac-Man</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
         body {
             display: flex;
@@ -17,14 +18,18 @@
             min-height: 100vh;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            touch-action: none;
         }
         .game-container {
             text-align: center;
+            padding: 10px;
         }
         h1 {
             color: #ffff00;
             margin-bottom: 10px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            font-size: 24px;
         }
         .info-panel {
             display: flex;
@@ -32,7 +37,7 @@
             max-width: 440px;
             margin: 0 auto 10px;
             color: white;
-            font-size: 18px;
+            font-size: 16px;
         }
         .score, .lives {
             background: rgba(255,255,255,0.1);
@@ -43,6 +48,8 @@
             border: 4px solid #4a4a8a;
             border-radius: 8px;
             box-shadow: 0 0 20px rgba(100,100,255,0.3);
+            max-width: 100%;
+            height: auto;
         }
         .controls {
             margin-top: 15px;
@@ -65,16 +72,20 @@
         .btn:hover {
             background: #6a6aaa;
         }
+        .btn:active {
+            background: #5a5a9a;
+        }
         .game-over {
-            position: absolute;
+            position: fixed;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.9);
+            background: rgba(0,0,0,0.95);
             padding: 40px;
             border-radius: 15px;
             display: none;
             z-index: 100;
+            max-width: 90%;
         }
         .game-over h2 {
             color: #ff0000;
@@ -82,6 +93,100 @@
         }
         .game-over.win h2 {
             color: #00ff00;
+        }
+        
+        /* 手机虚拟方向键 */
+        .mobile-controls {
+            display: none;
+            margin-top: 20px;
+            user-select: none;
+        }
+        .d-pad {
+            display: grid;
+            grid-template-columns: repeat(3, 60px);
+            grid-template-rows: repeat(2, 60px);
+            gap: 8px;
+            justify-content: center;
+            align-items: center;
+        }
+        .d-btn {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(145deg, #4a4a8a, #3a3a6a);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            transition: all 0.1s;
+        }
+        .d-btn:active {
+            transform: scale(0.95);
+            background: linear-gradient(145deg, #5a5a9a, #4a4a8a);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .d-btn.up { grid-column: 2; grid-row: 1; }
+        .d-btn.left { grid-column: 1; grid-row: 2; }
+        .d-btn.down { grid-column: 2; grid-row: 2; }
+        .d-btn.right { grid-column: 3; grid-row: 2; }
+        
+        .action-btns {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+        .action-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #6a4a4a, #5a3a3a);
+            border: none;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        .action-btn:active {
+            transform: scale(0.95);
+        }
+        
+        /* 桌面端隐藏虚拟按键 */
+        @media (min-width: 768px) {
+            .mobile-controls {
+                display: none !important;
+            }
+        }
+        
+        /* 移动端显示虚拟按键 */
+        @media (max-width: 767px) {
+            .desktop-hint {
+                display: none !important;
+            }
+            .mobile-controls {
+                display: block !important;
+            }
+            h1 {
+                font-size: 20px;
+            }
+            .info-panel {
+                font-size: 14px;
+            }
+            .score, .lives {
+                padding: 6px 12px;
+            }
+        }
+        
+        /* 滑动提示 */
+        .swipe-hint {
+            color: #888;
+            font-size: 12px;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -93,11 +198,29 @@
             <div class="lives">生命：<span id="lives">❤️❤️❤️</span></div>
         </div>
         <canvas id="gameCanvas" width="440" height="520"></canvas>
-        <div class="controls">
+        
+        <!-- 桌面控制提示 -->
+        <div class="controls desktop-hint">
             <p>⬆️⬇️⬅️➡️ 方向键 或 W A S D 控制移动</p>
             <p>空格键 暂停/继续</p>
             <button class="btn" onclick="restartGame()">🔄 重新开始</button>
         </div>
+        
+        <!-- 手机虚拟控制 -->
+        <div class="mobile-controls">
+            <div class="d-pad">
+                <button class="d-btn up" ontouchstart="setDirection('up')" onclick="setDirection('up')">⬆️</button>
+                <button class="d-btn left" ontouchstart="setDirection('left')" onclick="setDirection('left')">⬅️</button>
+                <button class="d-btn down" ontouchstart="setDirection('down')" onclick="setDirection('down')">⬇️</button>
+                <button class="d-btn right" ontouchstart="setDirection('right')" onclick="setDirection('right')">➡️</button>
+            </div>
+            <div class="action-btns">
+                <button class="action-btn" ontouchstart="togglePause()" onclick="togglePause()">⏸️</button>
+                <button class="action-btn" ontouchstart="restartGame()" onclick="restartGame()">🔄</button>
+            </div>
+            <p class="swipe-hint">💡 也可以在画面上滑动控制方向</p>
+        </div>
+        
         <div class="game-over" id="gameOver">
             <h2 id="gameOverText">游戏结束!</h2>
             <p style="color: white; margin-bottom: 20px;">最终得分：<span id="finalScore">0</span></p>
@@ -171,6 +294,10 @@
         const ghostNames = ['Blinky', 'Pinky', 'Inky', 'Clyde'];
         let ghosts = [];
         
+        // 触摸滑动控制
+        let touchStartX = 0;
+        let touchStartY = 0;
+        
         // 初始化游戏
         function initGame() {
             map = JSON.parse(JSON.stringify(mapLayout));
@@ -208,6 +335,18 @@
                 {x: 10, y: 10, color: ghostColors[2], name: ghostNames[2], direction: 'up', scared: false, eaten: false},
                 {x: 11, y: 10, color: ghostColors[3], name: ghostNames[3], direction: 'up', scared: false, eaten: false}
             ];
+        }
+        
+        // 设置方向（手机按钮控制）
+        function setDirection(dir) {
+            if (!gameRunning || gamePaused) return;
+            pacman.nextDirection = dir;
+        }
+        
+        // 暂停/继续
+        function togglePause() {
+            if (!gameRunning) return;
+            gamePaused = !gamePaused;
         }
         
         // 绘制地图
@@ -628,6 +767,47 @@
                     break;
             }
         });
+        
+        // 触摸滑动控制
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: false });
+        
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            if (!gameRunning || gamePaused) return;
+            
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            
+            const diffX = touchEndX - touchStartX;
+            const diffY = touchEndY - touchStartY;
+            
+            // 判断滑动方向（需要最小滑动距离）
+            const minSwipe = 30;
+            
+            if (Math.abs(diffX) > Math.abs(diffY)) {
+                // 水平滑动
+                if (Math.abs(diffX) > minSwipe) {
+                    if (diffX > 0) {
+                        pacman.nextDirection = 'right';
+                    } else {
+                        pacman.nextDirection = 'left';
+                    }
+                }
+            } else {
+                // 垂直滑动
+                if (Math.abs(diffY) > minSwipe) {
+                    if (diffY > 0) {
+                        pacman.nextDirection = 'down';
+                    } else {
+                        pacman.nextDirection = 'up';
+                    }
+                }
+            }
+        }, { passive: false });
         
         // 启动游戏
         initGame();
