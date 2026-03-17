@@ -737,7 +737,7 @@
         
         // 移动幽灵
         function moveGhosts() {
-            ghosts.forEach(ghost => {
+            ghosts.forEach((ghost, index) => {
                 if (ghost.eaten) {
                     if (ghost.x < 10) ghost.x++;
                     else if (ghost.x > 10) ghost.x--;
@@ -760,11 +760,31 @@
                 if (validMoves.length > 0) {
                     let chosenDir;
                     if (ghost.scared) {
-                        chosenDir = validMoves[Math.floor(Math.random() * validMoves.length)];
+                        // 恐惧模式：尽量远离吃豆人
+                        let bestDir = validMoves[0];
+                        let bestDist = -Infinity;
+                        validMoves.forEach(dir => {
+                            let testX = ghost.x;
+                            let testY = ghost.y;
+                            if (dir === 'right') testX++;
+                            else if (dir === 'left') testX--;
+                            else if (dir === 'up') testY--;
+                            else if (dir === 'down') testY++;
+                            const dist = Math.abs(testX - pacman.x) + Math.abs(testY - pacman.y);
+                            if (dist > bestDist) {
+                                bestDist = dist;
+                                bestDir = dir;
+                            }
+                        });
+                        chosenDir = bestDir;
                     } else {
-                        if (Math.random() < 0.6) {
+                        // 每个幽灵有不同的行为模式
+                        let chaseProbability = 0.7 + (index * 0.075); // 越后面的幽灵越聪明
+                        
+                        if (Math.random() < chaseProbability) {
                             let bestDir = validMoves[0];
                             let bestDist = Infinity;
+                            
                             validMoves.forEach(dir => {
                                 let testX = ghost.x;
                                 let testY = ghost.y;
@@ -772,7 +792,36 @@
                                 else if (dir === 'left') testX--;
                                 else if (dir === 'up') testY--;
                                 else if (dir === 'down') testY++;
-                                const dist = Math.abs(testX - pacman.x) + Math.abs(testY - pacman.y);
+                                
+                                // 不同幽灵有不同策略
+                                let dist;
+                                if (index === 0) {
+                                    // Blinky - 直接追逐
+                                    dist = Math.abs(testX - pacman.x) + Math.abs(testY - pacman.y);
+                                } else if (index === 1) {
+                                    // Pinky - 试图拦截前方
+                                    let targetX = pacman.x;
+                                    let targetY = pacman.y;
+                                    if (pacman.direction === 'right') targetX += 4;
+                                    else if (pacman.direction === 'left') targetX -= 4;
+                                    else if (pacman.direction === 'up') targetY -= 4;
+                                    else if (pacman.direction === 'down') targetY += 4;
+                                    dist = Math.abs(testX - targetX) + Math.abs(testY - targetY);
+                                } else if (index === 2) {
+                                    // Inky - 随机性更强
+                                    dist = Math.abs(testX - pacman.x) + Math.abs(testY - pacman.y);
+                                    dist += Math.random() * 3;
+                                } else {
+                                    // Clyde - 有时追逐有时随机
+                                    const distToPacman = Math.abs(ghost.x - pacman.x) + Math.abs(ghost.y - pacman.y);
+                                    if (distToPacman < 8) {
+                                        // 离太近就逃跑
+                                        dist = -Math.abs(testX - pacman.x) - Math.abs(testY - pacman.y);
+                                    } else {
+                                        dist = Math.abs(testX - pacman.x) + Math.abs(testY - pacman.y);
+                                    }
+                                }
+                                
                                 if (dist < bestDist) {
                                     bestDist = dist;
                                     bestDir = dir;
