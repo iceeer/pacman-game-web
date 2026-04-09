@@ -155,6 +155,81 @@ function addFloatingText(text, x, y, color) {
   floatingTexts.push({ text, x: x * TILE, y: y * TILE, color, life: 1000 });
 }
 
+// ===== 音效系统 =====
+let audioCtx = null;
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
+
+function playTone(freq, duration, type, volume) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'square';
+  osc.frequency.value = freq;
+  gain.gain.value = volume || 0.1;
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function playEatDot() {
+  playTone(440, 0.08, 'square', 0.08);
+}
+
+function playEatPowerPellet() {
+  if (!audioCtx) return;
+  const notes = [440, 523, 659, 784];
+  notes.forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.12, 'square', 0.1), i * 80);
+  });
+}
+
+function playEatGhost() {
+  if (!audioCtx) return;
+  const notes = [600, 800, 1000, 1200];
+  notes.forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.15, 'sawtooth', 0.1), i * 60);
+  });
+}
+
+function playDeath() {
+  if (!audioCtx) return;
+  const notes = [400, 350, 300, 250, 200];
+  notes.forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.2, 'sawtooth', 0.12), i * 150);
+  });
+}
+
+function playLevelUp() {
+  if (!audioCtx) return;
+  const notes = [523, 659, 784, 1047];
+  notes.forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.2, 'square', 0.1), i * 120);
+  });
+}
+
+function playGameOver() {
+  if (!audioCtx) return;
+  const notes = [392, 330, 262, 196];
+  notes.forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.3, 'sawtooth', 0.12), i * 250);
+  });
+}
+
+function playGameStart() {
+  if (!audioCtx) return;
+  const notes = [523, 659, 784, 1047, 784, 1047];
+  notes.forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.15, 'square', 0.1), i * 100);
+  });
+}
+
 // ===== Canvas 初始化 =====
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -284,6 +359,7 @@ function movePacman(dt) {
     score += 10;
     dotsEaten++;
     addFloatingText('+10', pacman.x, pacman.y, '#FFB8AE');
+    playEatDot();
     updateScoreDisplay();
     checkHighScore();
     checkWin();
@@ -292,6 +368,7 @@ function movePacman(dt) {
     score += 50;
     dotsEaten++;
     addFloatingText('+50', pacman.x, pacman.y, '#FFB8AE');
+    playEatPowerPellet();
     activateFrightened();
     updateScoreDisplay();
     checkHighScore();
@@ -323,6 +400,7 @@ function nextLevel() {
   frightenedTimer = 0;
   modeTimer = 0;
   updateLivesDisplay();
+  playLevelUp();
   showMessage('第 ' + level + ' 关 - 按 Enter 开始');
 }
 
@@ -335,6 +413,7 @@ function checkPacmanGhostCollision() {
         const ghostScore = 200 * Math.pow(2, frightenedGhostIndex);
         score += ghostScore;
         addFloatingText('+' + ghostScore, ghost.x, ghost.y, '#0ff');
+        playEatGhost();
         frightenedGhostIndex++;
         updateScoreDisplay();
         checkHighScore();
@@ -365,9 +444,11 @@ function drawFloatingTexts(dt) {
 function pacmanHit() {
   pacman.lives--;
   updateLivesDisplay();
+  playDeath();
 
   if (pacman.lives <= 0) {
     gameState = STATE.GAME_OVER;
+    playGameOver();
     showMessage('GAME OVER! 得分: ' + score + ' - 按 Enter 重新开始');
   } else {
     gameState = STATE.READY;
@@ -484,12 +565,15 @@ document.addEventListener('keydown', (e) => {
       break;
     case 'Enter':
       if (gameState === STATE.READY) {
+        initAudio();
         gameState = STATE.PLAYING;
         hideMessage();
+        playGameStart();
       } else if (gameState === STATE.GAME_OVER || gameState === STATE.WIN) {
         resetGame();
         gameState = STATE.PLAYING;
         hideMessage();
+        playGameStart();
       }
       e.preventDefault();
       break;
