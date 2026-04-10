@@ -139,6 +139,10 @@ canvas {
     <div class="label">LEVEL</div>
     <div class="value" id="level">1</div>
   </div>
+  <div>
+    <div class="label">DOTS</div>
+    <div class="value" id="dots">0</div>
+  </div>
 </div>
 <canvas id="gameCanvas"></canvas>
 <div id="lives"></div>
@@ -434,6 +438,7 @@ function checkFruitCollision() {
     addFloatingText('+' + activeFruit.score, activeFruit.x, activeFruit.y, activeFruit.color);
     playFruit();
     updateScoreDisplay();
+    updateDotsDisplay();
     checkHighScore();
     activeFruit = null;
   }
@@ -575,6 +580,7 @@ function movePacman(dt) {
     addFloatingText('+10', pacman.x, pacman.y, '#FFB8AE');
     playEatDot();
     updateScoreDisplay();
+    updateDotsDisplay();
     checkHighScore();
     checkWin();
   } else if (tile === POWER_PELLET) {
@@ -587,6 +593,7 @@ function movePacman(dt) {
     playEatPowerPellet();
     activateFrightened();
     updateScoreDisplay();
+    updateDotsDisplay();
     checkHighScore();
     checkWin();
   }
@@ -1102,6 +1109,7 @@ function resetGame() {
   resetPositions();
   updateScoreDisplay();
   updateLevelDisplay();
+  updateDotsDisplay();
   updateLivesDisplay();
   activePowerups = [];
   powerupSpawnTimer = 0;
@@ -2282,6 +2290,11 @@ function updateScoreDisplay() {
 
 function updateLevelDisplay() {
   document.getElementById('level').textContent = level;
+}
+
+function updateDotsDisplay() {
+  const remaining = totalDots - dotsEaten;
+  document.getElementById('dots').textContent = remaining;
 }
 
 function showMessage(text) {
