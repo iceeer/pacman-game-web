@@ -22,9 +22,54 @@ body {
   padding: 10px 0;
   font-size: 18px;
 }
+#touch-controls {
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+}
+.touch-btn {
+  width: 60px; height: 60px;
+  background: rgba(255,255,0,0.3);
+  border: 2px solid rgba(255,255,0,0.6);
+  border-radius: 12px;
+  color: #ff0;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.touch-btn:active {
+  background: rgba(255,255,0,0.6);
+}
+.touch-grid {
+  display: grid;
+  grid-template-columns: 60px 60px 60px;
+  grid-template-rows: 60px 60px 60px;
+  gap: 4px;
+}
+.touch-up { grid-column: 2; grid-row: 1; }
+.touch-left { grid-column: 1; grid-row: 2; }
+.touch-right { grid-column: 3; grid-row: 2; }
+.touch-down { grid-column: 2; grid-row: 3; }
+.touch-pause { grid-column: 2; grid-row: 1; }
+
+/* 移动端适配 */
+@media (pointer: coarse) {
+  #touch-controls { display: block; }
+  #lives { margin-bottom: 140px; }
+  canvas { max-width: 95vw; max-height: 60vh; }
+}
 #hud span { min-width: 150px; text-align: center; }
 #hud .label { color: #aaa; font-size: 14px; }
 #hud .value { color: #ff0; font-size: 22px; font-weight: bold; }
+#hud .multiplier { color: #0ff; font-size: 14px; display: block; }
 canvas {
   border: 2px solid #2121DE;
   image-rendering: pixelated;
@@ -72,6 +117,14 @@ canvas {
 <canvas id="gameCanvas"></canvas>
 <div id="lives"></div>
 <div id="message" style="display:none">按 Enter 开始游戏</div>
+<div id="touch-controls">
+  <div class="touch-grid">
+    <button class="touch-btn touch-up" data-dir="up">▲</button>
+    <button class="touch-btn touch-left" data-dir="left">◀</button>
+    <button class="touch-btn touch-down" data-dir="down">▼</button>
+    <button class="touch-btn touch-right" data-dir="right">▶</button>
+  </div>
+</div>
 
 <script>
 // ===== 游戏常量 =====
@@ -459,8 +512,10 @@ const MOVE_INTERVAL = 150;
 
 function movePacman(dt) {
   const config = getDifficultyConfig();
+  // 加速效果
+  const speedMultiplier = pacmanSpeedBoost > 0 ? 0.7 : 1;
   moveTimer += dt;
-  if (moveTimer < config.pacmanSpeed) return;
+  if (moveTimer < config.pacmanSpeed * speedMultiplier) return;
   moveTimer = 0;
 
   const nx = pacman.x + pacman.nextDirection.x;
@@ -521,7 +576,7 @@ function checkWin() {
     updateLevelDisplay();
     saveStats();
     checkAchievements();
-    nextLevel();
+    startLevelTransition();
   }
 }
 
@@ -884,8 +939,119 @@ function checkHiddenLevel() {
 }
 
 function getMazeTemplate() {
-  return isHiddenLevel ? HIDDEN_MAZE : MAZE_TEMPLATE;
+  // 根据关卡轮转迷宫
+  const mazeIndex = (level - 1) % 4;
+  if (isHiddenLevel) return HIDDEN_MAZE;
+  if (mazeIndex === 0) return MAZE_TEMPLATE;
+  if (mazeIndex === 1) return MAZE_ROTATION_1;
+  if (mazeIndex === 2) return MAZE_ROTATION_2;
+  return MAZE_ROTATION_3;
 }
+
+// 迷宫轮换 1：通道更宽
+const MAZE_ROTATION_1 = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,2,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,2,1],
+  [1,3,1,1,1,2,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,3,1],
+  [1,2,2,2,2,2,2,2,2,1,1,1,2,2,2,2,1,1,1,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,2,1],
+  [1,2,2,2,2,2,2,1,2,2,2,2,1,1,2,2,2,2,1,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,2,1,1,1,1,0,1,1,0,1,1,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,4,4,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,0,1,0,0,0,2,0,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,1,1,2,2,2,2,2,2,2,0,0,2,2,2,2,2,2,2,1,1,2,2,2,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+// 迷宫轮换 2：迷宫更复杂
+const MAZE_ROTATION_2 = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,3,2,2,1,1,2,2,2,2,2,1,2,2,2,2,1,2,2,2,2,2,1,1,2,2,3,1],
+  [1,2,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,2,1],
+  [1,2,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,1],
+  [1,1,1,1,2,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,2,1,1,1,1],
+  [0,0,0,0,2,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,2,0,0,0,0],
+  [0,0,0,0,2,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,2,0,0,0,0],
+  [1,1,1,1,2,1,2,1,1,2,1,1,1,4,4,1,1,1,2,1,1,2,1,2,1,1,1,1],
+  [1,1,1,1,2,1,2,1,1,2,1,0,0,0,0,0,0,1,2,1,1,2,1,2,1,1,1,1],
+  [0,0,0,0,2,0,2,0,0,2,0,0,0,0,0,0,0,0,2,0,0,2,0,2,0,0,0,0],
+  [1,1,1,1,2,1,2,1,1,2,1,0,0,0,0,0,0,1,2,1,1,2,1,2,1,1,1,1],
+  [1,1,1,1,2,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,2,1,1,1,1],
+  [0,0,0,0,2,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,2,0,0,0,0],
+  [0,0,0,0,2,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,2,0,0,0,0],
+  [1,1,1,1,2,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,2,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,3,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,2,2,2,1,1,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,1,1,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+// 迷宫轮换 3：对称十字型
+const MAZE_ROTATION_3 = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,2,1],
+  [1,2,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1],
+  [1,1,1,1,1,2,1,1,2,1,1,1,0,0,0,0,1,1,1,2,1,1,2,1,1,1,1,1],
+  [1,1,1,1,1,2,1,1,2,1,1,0,0,4,4,0,0,1,1,2,1,1,2,1,1,1,1,1],
+  [1,1,1,1,1,2,1,1,2,1,1,0,0,0,0,0,0,1,1,2,1,1,2,1,1,1,1,1],
+  [1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
 
 function resetPositions() {
   pacman.x = 14;
@@ -898,12 +1064,20 @@ function resetPositions() {
 
 function resetGame() {
   score = 0;
+  displayedScore = 0;
+  targetScore = 0;
   level = 1;
   initMaze();
+  initPowerupSlots();
   resetPositions();
   updateScoreDisplay();
   updateLevelDisplay();
   updateLivesDisplay();
+  activePowerups = [];
+  powerupSpawnTimer = 0;
+  pacmanSpeedBoost = 0;
+  ghostSlowDebuff = 0;
+  isLevelTransition = false;
 }
 
 function render(dt) {
@@ -934,9 +1108,11 @@ function render(dt) {
     }
     drawFloatingTexts(dt);
     drawFruit();
+    drawPowerups();
     drawParticles();
     drawComboDisplay();
     drawSpeedIndicator();
+    drawMultiplierDisplay();
   }
 
   if (gameState === STATE.DYING) {
@@ -1000,12 +1176,23 @@ function gameLoop(timestamp) {
   if (gameState === STATE.PLAYING) {
     movePacman(dt);
     checkTeleporter();
+    checkPowerupCollision();
     moveGhosts(dt);
     checkPacmanGhostCollision();
     checkFruitCollision();
     updateCombo(dt);
     updateParticles(dt);
     updateInvincibility(dt);
+    updatePowerups(dt);
+    updatePowerupTimers(dt);
+    updateScoreAnimation(dt);
+
+    // 能量道具生成
+    powerupSpawnTimer += dt;
+    if (powerupSpawnTimer >= POWERUP_SPAWN_INTERVAL && activePowerups.length === 0) {
+      spawnPowerup();
+      powerupSpawnTimer = 0;
+    }
 
     if (dotsEaten > 0 && dotsEaten % 50 === 0 && !activeFruit) {
       spawnFruit();
@@ -1017,6 +1204,11 @@ function gameLoop(timestamp) {
   if (gameState === STATE.DYING) {
     updateDeathAnimation(dt);
     updateParticles(dt);
+  }
+
+  if (gameState === STATE.WIN && isLevelTransition) {
+    updateLevelTransition(dt);
+    return; // render handled inside updateLevelTransition
   }
 
   render(dt);
@@ -1411,6 +1603,25 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// ===== 触摸控制（移动端） =====
+document.querySelectorAll('.touch-btn').forEach(btn => {
+  const dirMap = {
+    'up': DIR.UP, 'down': DIR.DOWN,
+    'left': DIR.LEFT, 'right': DIR.RIGHT
+  };
+  const dir = dirMap[btn.dataset.dir];
+  if (!dir) return;
+
+  const handleTouch = (e) => {
+    e.preventDefault();
+    if (gameState === STATE.PLAYING || gameState === STATE.READY) {
+      pacman.nextDirection = dir;
+    }
+  };
+  btn.addEventListener('touchstart', handleTouch, { passive: false });
+  btn.addEventListener('mousedown', handleTouch);
+});
+
 // ===== 吃豆人 =====
 let pacman = {
   x: 14,
@@ -1458,6 +1669,7 @@ const MODE_SWITCH_INTERVAL = 20000;
 
 function initGhosts() {
   ghosts = [];
+  const gameStartTime = Date.now();
   for (let i = 0; i < 4; i++) {
     ghosts.push({
       x: GHOST_STARTS[i].x,
@@ -1466,13 +1678,16 @@ function initGhosts() {
       state: 'scatter',
       color: ghostColors[i],
       inHouse: i > 0,
-      releaseDelay: i * 3000
+      houseExitTimer: i * 4000, // 每个鬼魂间隔4秒离开
+      bobPhase: Math.random() * Math.PI * 2 // 在房子里上下浮动
     });
   }
   ghostMode = 'scatter';
   modeTimer = 0;
   ghostMoveTimers = [0, 0, 0, 0];
 }
+
+let gameElapsed = 0;
 
 function drawGhostEyes(cx, cy, direction) {
   ctx.fillStyle = '#fff';
@@ -1491,8 +1706,13 @@ function drawGhostEyes(cx, cy, direction) {
 }
 
 function drawGhost(ghost) {
+  let offsetY = 0;
+  if (ghost.inHouse) {
+    offsetY = Math.sin(ghost.bobPhase || 0) * 3;
+  }
+
   const px = ghost.x * TILE;
-  const py = ghost.y * TILE;
+  const py = ghost.y * TILE + offsetY;
   const cx = px + TILE / 2;
   const cy = py + TILE / 2;
   const r = TILE / 2 - 1;
@@ -1636,6 +1856,9 @@ function activateFrightened() {
 function moveGhosts(dt) {
   const config = getDifficultyConfig();
 
+  // 鬼魂减速效果
+  const ghostMultiplier = ghostSlowDebuff > 0 ? 1.5 : 1;
+
   modeTimer += dt;
   if (modeTimer > config.scatterDuration) {
     modeTimer = 0;
@@ -1661,16 +1884,34 @@ function moveGhosts(dt) {
   for (let i = 0; i < ghosts.length; i++) {
     const ghost = ghosts[i];
     let interval = ghost.state === 'frightened' ? config.frightenedSpeed : config.ghostSpeed;
+    interval = Math.round(interval * ghostMultiplier);
 
     ghostMoveTimers[i] += dt;
     if (ghostMoveTimers[i] < interval) continue;
     ghostMoveTimers[i] = 0;
 
+    // 被吃的鬼魂走隧道回老家
+    if (ghost.state === 'eaten') {
+      if (moveGhostToHouse(ghost)) continue;
+      continue; // tunnel movement, skip normal direction logic
+    }
+
     if (ghost.inHouse) {
-      ghost.inHouse = false;
-      ghost.x = 14;
-      ghost.y = 11;
-      ghost.direction = DIR.LEFT;
+      // 计时释放：检查是否到了离开时间
+      if (ghost.houseExitTimer > 0) {
+        ghost.houseExitTimer -= dt * gameSpeed;
+        if (ghost.houseExitTimer <= 0) {
+          ghost.inHouse = false;
+          ghost.x = 14;
+          ghost.y = 11;
+          ghost.direction = DIR.LEFT;
+          ghost.state = ghostMode;
+        }
+      } else {
+        // 在房子里上下浮动动画
+        ghost.bobPhase += dt * 0.005;
+        // 仍然渲染在房子内，但位置会浮动
+      }
       continue;
     }
 
@@ -1679,13 +1920,6 @@ function moveGhosts(dt) {
     let nx = ghost.x + ghost.direction.x;
     let ny = ghost.y + ghost.direction.y;
 
-    if (ghost.state === 'eaten' && nx === 14 && ny >= 13 && ny <= 15) {
-      ghost.state = ghostMode;
-      ghost.x = 14;
-      ghost.y = 11;
-      continue;
-    }
-
     if (nx < 0) ghost.x = COLS - 1;
     else if (nx >= COLS) ghost.x = 0;
     else {
@@ -1693,6 +1927,250 @@ function moveGhosts(dt) {
       ghost.y = ny;
     }
   }
+}
+
+// ===== 分数滚动动画 =====
+let displayedScore = 0;
+let targetScore = 0;
+
+function updateScoreDisplay() {
+  targetScore = score;
+}
+
+function updateScoreAnimation(dt) {
+  if (displayedScore < targetScore) {
+    const diff = targetScore - displayedScore;
+    const step = Math.max(1, Math.ceil(diff / 10));
+    displayedScore = Math.min(displayedScore + step, targetScore);
+    document.getElementById('score').textContent = displayedScore;
+  }
+}
+
+// ===== 能量增强系统 =====
+const POWERUPS = [
+  { id: 'speed', name: '⚡', color: '#FFFF00', duration: 5000, desc: '加速' },
+  { id: 'slowGhost', name: '🐢', color: '#00FF00', duration: 6000, desc: '鬼魂减速' },
+  { id: 'ghostSlow', name: '💨', color: '#FF8800', duration: 8000, desc: '鬼魂减速' }
+];
+
+let activePowerups = [];
+let powerupSpawnTimer = 0;
+const POWERUP_SPAWN_INTERVAL = 30000; // 每30秒出现一个
+
+// 能量道具在迷宫中的固定位置
+const POWERUP_POSITIONS = [
+  { x: 3, y: 3 }, { x: 24, y: 3 },
+  { x: 3, y: 27 }, { x: 24, y: 27 },
+  { x: 13, y: 11 }
+];
+
+let availablePowerupSlots = [];
+
+function initPowerupSlots() {
+  availablePowerupSlots = [...POWERUP_POSITIONS];
+}
+
+function spawnPowerup() {
+  if (availablePowerupSlots.length === 0) return;
+  const idx = Math.floor(Math.random() * availablePowerupSlots.length);
+  const pos = availablePowerupSlots.splice(idx, 1)[0];
+  const type = POWERUPS[Math.floor(Math.random() * POWERUPS.length)];
+  activePowerups.push({
+    ...type,
+    x: pos.x, y: pos.y,
+    spawnTime: Date.now(),
+    duration: type.duration
+  });
+}
+
+function updatePowerups(dt) {
+  const now = Date.now();
+  activePowerups = activePowerups.filter(p => {
+    if (now - p.spawnTime > p.duration * 2) return false; // 超时消失
+    return true;
+  });
+}
+
+function drawPowerups() {
+  const now = Date.now();
+  for (const p of activePowerups) {
+    const elapsed = now - p.spawnTime;
+    const flash = elapsed > p.duration * 1.5 && Math.floor(now / 150) % 2;
+    if (flash) continue;
+
+    const px = p.x * TILE + TILE / 2;
+    const py = p.y * TILE + TILE / 2;
+
+    // 外圈光晕
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(px, py, TILE / 2 + 2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 图标
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 14px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.name, px, py);
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+function checkPowerupCollision() {
+  for (let i = activePowerups.length - 1; i >= 0; i--) {
+    const p = activePowerups[i];
+    if (pacman.x === p.x && pacman.y === p.y) {
+      applyPowerup(p);
+      spawnParticles(p.x, p.y, p.color, 15);
+      addFloatingText(p.desc, p.x, p.y, p.color);
+      activePowerups.splice(i, 1);
+      break;
+    }
+  }
+}
+
+function applyPowerup(powerup) {
+  playAchievement();
+  switch (powerup.id) {
+    case 'speed':
+      pacmanSpeedBoost = powerup.duration;
+      break;
+    case 'slowGhost':
+    case 'ghostSlow':
+      ghostSlowDebuff = powerup.duration;
+      break;
+  }
+}
+
+let pacmanSpeedBoost = 0;
+let ghostSlowDebuff = 0;
+
+function updatePowerupTimers(dt) {
+  if (pacmanSpeedBoost > 0) {
+    pacmanSpeedBoost -= dt;
+    if (pacmanSpeedBoost <= 0) pacmanSpeedBoost = 0;
+  }
+  if (ghostSlowDebuff > 0) {
+    ghostSlowDebuff -= dt;
+    if (ghostSlowDebuff <= 0) ghostSlowDebuff = 0;
+  }
+}
+
+// ===== 过关动画 =====
+let levelTransitionTimer = 0;
+const LEVEL_TRANSITION_DURATION = 2500;
+let isLevelTransition = false;
+
+function startLevelTransition() {
+  isLevelTransition = true;
+  levelTransitionTimer = 0;
+  gameState = STATE.WIN;
+  playLevelUp();
+}
+
+function updateLevelTransition(dt) {
+  if (!isLevelTransition) return;
+  levelTransitionTimer += dt;
+
+  // 闪烁迷宫
+  if (Math.floor(levelTransitionTimer / 200) % 2 === 0) {
+    ctx.fillStyle = '#2121DE';
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 16px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('关卡 ' + level + ' 完成！', WIDTH / 2, HEIGHT / 2 - 60);
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 36px Courier New';
+    ctx.fillText('LEVEL ' + (level - 1) + ' CLEAR!', WIDTH / 2, HEIGHT / 2 - 10);
+    ctx.fillStyle = '#fff';
+    ctx.font = '18px Courier New';
+    ctx.fillText('得分: ' + score, WIDTH / 2, HEIGHT / 2 + 30);
+    ctx.fillText('下一关: 第 ' + level + ' 关', WIDTH / 2, HEIGHT / 2 + 60);
+  }
+
+  if (levelTransitionTimer >= LEVEL_TRANSITION_DURATION) {
+    isLevelTransition = false;
+    gameState = STATE.READY;
+    initMaze();
+    initGhosts();
+    resetPositions();
+    activeFruit = null;
+    activePowerups = [];
+    frightenedTimer = 0;
+    modeTimer = 0;
+    updateLivesDisplay();
+    showMessage('第 ' + level + ' 关 - 按 Enter 开始');
+  }
+}
+
+// ===== HUD 倍数显示 =====
+function drawMultiplierDisplay() {
+  if (frightenedTimer > 0 && frightenedGhostIndex < 4) {
+    const multipliers = ['200', '400', '800', '1600'];
+    const current = multipliers[frightenedGhostIndex] || '200';
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 12px Courier New';
+    ctx.textAlign = 'right';
+    ctx.fillText('鬼魂倍率: ' + current, WIDTH - 10, 20);
+  }
+
+  // 能量道具状态
+  if (pacmanSpeedBoost > 0) {
+    ctx.fillStyle = '#FFFF00';
+    ctx.font = 'bold 12px Courier New';
+    ctx.textAlign = 'left';
+    ctx.fillText('⚡加速', 10, 20);
+  }
+  if (ghostSlowDebuff > 0) {
+    ctx.fillStyle = '#00FF00';
+    ctx.font = 'bold 12px Courier New';
+    ctx.textAlign = 'left';
+    const yOff = pacmanSpeedBoost > 0 ? 35 : 20;
+    ctx.fillText('🐢减速', 10, yOff);
+  }
+
+  // 鬼魂释放倒计时
+  const houseGhosts = ghosts.filter(g => g.inHouse && g.houseExitTimer > 0);
+  if (houseGhosts.length > 0) {
+    ctx.fillStyle = '#FFB8FF';
+    ctx.font = 'bold 12px Courier New';
+    ctx.textAlign = 'center';
+    const nextTimer = Math.max(0, Math.ceil(houseGhosts[0].houseExitTimer / 1000));
+    ctx.fillText('下个鬼魂: ' + nextTimer + 's', WIDTH / 2, 20);
+  }
+}
+
+// ===== 鬼魂老家隧道逻辑 =====
+function moveGhostToHouse(ghost) {
+  // 眼睛通过隧道返回老家
+  const homeX = 14;
+  const homeY = 14;
+  const gateY = 13;
+
+  if (ghost.y === gateY && ghost.x === homeX) {
+    ghost.state = ghostMode;
+    ghost.y = homeY;
+    ghost.inHouse = true;
+    ghost.x = homeX;
+    return true;
+  }
+
+  // 简单路径：先移到中间行，再移到中间列
+  const tunnelY = 14; // 隧道所在行
+  if (ghost.y !== tunnelY) {
+    // 向隧道行移动
+    ghost.y += ghost.y < tunnelY ? 1 : -1;
+  } else if (ghost.x !== homeX) {
+    // 向中间列移动
+    ghost.x += ghost.x < homeX ? 1 : -1;
+  } else {
+    // 到达中间，向门移动
+    ghost.y -= 1;
+  }
+  return false;
 }
 
 // ===== HUD 更新函数 =====
@@ -1726,6 +2204,7 @@ function hideMessage() {
 
 // ===== 启动 =====
 initMaze();
+initPowerupSlots();
 initGhosts();
 document.getElementById('highScore').textContent = highScore;
 console.log('迷宫初始化完成, 总豆子数:', totalDots);
