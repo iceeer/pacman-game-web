@@ -71,7 +71,7 @@ canvas {
 </div>
 <canvas id="gameCanvas"></canvas>
 <div id="lives"></div>
-<div id="message">按 Enter 开始游戏</div>
+<div id="message" style="display:none">按 Enter 开始游戏</div>
 
 <script>
 // ===== 游戏常量 =====
@@ -138,11 +138,13 @@ const STATE = {
   PLAYING: 'playing',
   PAUSED: 'paused',
   GAME_OVER: 'game_over',
-  WIN: 'win'
+  WIN: 'win',
+  DYING: 'dying',
+  MENU: 'menu'
 };
 
 // ===== 全局游戏状态 =====
-let gameState = STATE.READY;
+let gameState = STATE.MENU;
 let maze = [];
 let score = 0;
 let highScore = parseInt(localStorage.getItem('pacmanHighScore')) || 0;
@@ -150,6 +152,34 @@ let level = 1;
 let totalDots = 0;
 let dotsEaten = 0;
 let floatingTexts = [];
+
+// ===== 难度系统 =====
+const DIFFICULTY = {
+  EASY: 'easy',
+  NORMAL: 'normal',
+  HARD: 'hard'
+};
+
+const DIFFICULTY_CONFIG = {
+  easy:   { ghostSpeed: 220, frightenedSpeed: 300, frightenedDuration: 12000, scatterDuration: 25000, pacmanSpeed: 130, label: '简单' },
+  normal: { ghostSpeed: 180, frightenedSpeed: 250, frightenedDuration: 8000,  scatterDuration: 20000, pacmanSpeed: 150, label: '普通' },
+  hard:   { ghostSpeed: 140, frightenedSpeed: 200, frightenedDuration: 5000,  scatterDuration: 15000, pacmanSpeed: 150, label: '困难' }
+};
+
+let difficulty = localStorage.getItem('pacmanDifficulty') || 'normal';
+let soundEnabled = localStorage.getItem('pacmanSound') !== 'false';
+let gameSpeed = 1.0;
+
+function getDifficultyConfig() {
+  const base = DIFFICULTY_CONFIG[difficulty];
+  // 每关鬼魂加速
+  const speedMultiplier = Math.max(0.6, 1 - (level - 1) * 0.05);
+  return {
+    ...base,
+    ghostSpeed: Math.round(base.ghostSpeed * speedMultiplier),
+    frightenedDuration: Math.max(3000, base.frightenedDuration - (level - 1) * 500)
+  };
+}
 
 function addFloatingText(text, x, y, color) {
   floatingTexts.push({ text, x: x * TILE, y: y * TILE, color, life: 1000 });
@@ -165,7 +195,7 @@ function initAudio() {
 }
 
 function playTone(freq, duration, type, volume) {
-  if (!audioCtx) return;
+  if (!audioCtx || !soundEnabled) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = type || 'square';
@@ -179,11 +209,12 @@ function playTone(freq, duration, type, volume) {
 }
 
 function playEatDot() {
+  if (!soundEnabled) return;
   playTone(440, 0.08, 'square', 0.08);
 }
 
 function playEatPowerPellet() {
-  if (!audioCtx) return;
+  if (!audioCtx || !soundEnabled) return;
   const notes = [440, 523, 659, 784];
   notes.forEach((freq, i) => {
     setTimeout(() => playTone(freq, 0.12, 'square', 0.1), i * 80);
@@ -191,7 +222,7 @@ function playEatPowerPellet() {
 }
 
 function playEatGhost() {
-  if (!audioCtx) return;
+  if (!audioCtx || !soundEnabled) return;
   const notes = [600, 800, 1000, 1200];
   notes.forEach((freq, i) => {
     setTimeout(() => playTone(freq, 0.15, 'sawtooth', 0.1), i * 60);
@@ -199,7 +230,7 @@ function playEatGhost() {
 }
 
 function playDeath() {
-  if (!audioCtx) return;
+  if (!audioCtx || !soundEnabled) return;
   const notes = [400, 350, 300, 250, 200];
   notes.forEach((freq, i) => {
     setTimeout(() => playTone(freq, 0.2, 'sawtooth', 0.12), i * 150);
@@ -207,7 +238,7 @@ function playDeath() {
 }
 
 function playLevelUp() {
-  if (!audioCtx) return;
+  if (!audioCtx || !soundEnabled) return;
   const notes = [523, 659, 784, 1047];
   notes.forEach((freq, i) => {
     setTimeout(() => playTone(freq, 0.2, 'square', 0.1), i * 120);
@@ -215,7 +246,7 @@ function playLevelUp() {
 }
 
 function playGameOver() {
-  if (!audioCtx) return;
+  if (!audioCtx || !soundEnabled) return;
   const notes = [392, 330, 262, 196];
   notes.forEach((freq, i) => {
     setTimeout(() => playTone(freq, 0.3, 'sawtooth', 0.12), i * 250);
@@ -223,11 +254,106 @@ function playGameOver() {
 }
 
 function playGameStart() {
-  if (!audioCtx) return;
+  if (!audioCtx || !soundEnabled) return;
   const notes = [523, 659, 784, 1047, 784, 1047];
   notes.forEach((freq, i) => {
     setTimeout(() => playTone(freq, 0.15, 'square', 0.1), i * 100);
   });
+}
+
+function playFruit() {
+  if (!audioCtx || !soundEnabled) return;
+  const notes = [880, 988, 1047, 1175, 1319];
+  notes.forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.1, 'square', 0.1), i * 60);
+  });
+}
+
+function playAchievement() {
+  if (!audioCtx || !soundEnabled) return;
+  const notes = [1047, 1319, 1568, 2093];
+  notes.forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.2, 'sine', 0.12), i * 100);
+  });
+}
+
+// ===== 水果系统 =====
+const FRUITS = [
+  { name: '樱桃', color: '#FF0000', score: 100, level: 1 },
+  { name: '草莓', color: '#FF69B4', score: 300, level: 2 },
+  { name: '桃子', color: '#FFB6C1', score: 500, level: 3 },
+  { name: '苹果', color: '#00CC00', score: 700, level: 4 },
+  { name: '葡萄', color: '#8B00FF', score: 1000, level: 5 },
+  { name: '香蕉', color: '#FFFF00', score: 2000, level: 6 },
+  { name: '铃铛', color: '#FFD700', score: 3000, level: 7 },
+  { name: '钥匙', color: '#00FFFF', score: 5000, level: 8 }
+];
+
+const FRUIT_POS = { x: 13, y: 17 }; // 水果出现位置（迷宫中央下方）
+const FRUIT_DURATION = 10000; // 水果存在10秒
+
+let activeFruit = null;
+let fruitTimer = 0;
+
+function getFruitForLevel(level) {
+  const idx = Math.min(level - 1, FRUITS.length - 1);
+  return FRUITS[idx];
+}
+
+function spawnFruit() {
+  if (activeFruit) return;
+  activeFruit = {
+    ...getFruitForLevel(level),
+    x: FRUIT_POS.x,
+    y: FRUIT_POS.y,
+    spawned: Date.now(),
+    visible: true
+  };
+}
+
+function drawFruit() {
+  if (!activeFruit || !activeFruit.visible) return;
+
+  // 检查是否超时
+  const elapsed = Date.now() - activeFruit.spawned;
+  if (elapsed > FRUIT_DURATION) {
+    activeFruit = null;
+    return;
+  }
+
+  // 最后2秒闪烁
+  if (elapsed > FRUIT_DURATION - 2000) {
+    activeFruit.visible = Math.floor(Date.now() / 200) % 2 === 0;
+    if (!activeFruit.visible) return;
+  }
+
+  const px = activeFruit.x * TILE + TILE / 2;
+  const py = activeFruit.y * TILE + TILE / 2;
+
+  // 绘制水果（圆形+文字）
+  ctx.fillStyle = activeFruit.color;
+  ctx.beginPath();
+  ctx.arc(px, py, TILE / 2 - 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 12px Courier New';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(activeFruit.name[0], px, py);
+  ctx.textBaseline = 'alphabetic';
+}
+
+function checkFruitCollision() {
+  if (!activeFruit || !activeFruit.visible) return;
+  if (pacman.x === activeFruit.x && pacman.y === activeFruit.y) {
+    score += activeFruit.score;
+    addFloatingText('+' + activeFruit.score, activeFruit.x, activeFruit.y, activeFruit.color);
+    playFruit();
+    updateScoreDisplay();
+    checkHighScore();
+    activeFruit = null;
+  }
 }
 
 // ===== Canvas 初始化 =====
@@ -238,7 +364,7 @@ canvas.height = HEIGHT;
 
 // 初始化迷宫（深拷贝）
 function initMaze() {
-  maze = MAZE_TEMPLATE.map(row => [...row]);
+  maze = getMazeTemplate().map(row => [...row]);
   totalDots = 0;
   dotsEaten = 0;
   for (let y = 0; y < ROWS; y++) {
@@ -332,8 +458,9 @@ let moveTimer = 0;
 const MOVE_INTERVAL = 150;
 
 function movePacman(dt) {
+  const config = getDifficultyConfig();
   moveTimer += dt;
-  if (moveTimer < MOVE_INTERVAL) return;
+  if (moveTimer < config.pacmanSpeed) return;
   moveTimer = 0;
 
   const nx = pacman.x + pacman.nextDirection.x;
@@ -358,6 +485,8 @@ function movePacman(dt) {
     maze[pacman.y][pacman.x] = EMPTY;
     score += 10;
     dotsEaten++;
+    spawnParticles(pacman.x, pacman.y, '#FFB8AE', 6);
+    addCombo();
     addFloatingText('+10', pacman.x, pacman.y, '#FFB8AE');
     playEatDot();
     updateScoreDisplay();
@@ -367,6 +496,8 @@ function movePacman(dt) {
     maze[pacman.y][pacman.x] = EMPTY;
     score += 50;
     dotsEaten++;
+    spawnParticles(pacman.x, pacman.y, '#FFB8AE', 12);
+    addCombo();
     addFloatingText('+50', pacman.x, pacman.y, '#FFB8AE');
     playEatPowerPellet();
     activateFrightened();
@@ -388,6 +519,8 @@ function checkWin() {
   if (dotsEaten >= totalDots) {
     level++;
     updateLevelDisplay();
+    saveStats();
+    checkAchievements();
     nextLevel();
   }
 }
@@ -399,6 +532,7 @@ function nextLevel() {
   resetPositions();
   frightenedTimer = 0;
   modeTimer = 0;
+  activeFruit = null;
   updateLivesDisplay();
   playLevelUp();
   showMessage('第 ' + level + ' 关 - 按 Enter 开始');
@@ -412,11 +546,18 @@ function checkPacmanGhostCollision() {
         ghost.state = 'eaten';
         const ghostScore = 200 * Math.pow(2, frightenedGhostIndex);
         score += ghostScore;
+        spawnParticles(ghost.x, ghost.y, '#0ff', 15);
         addFloatingText('+' + ghostScore, ghost.x, ghost.y, '#0ff');
         playEatGhost();
         frightenedGhostIndex++;
         updateScoreDisplay();
         checkHighScore();
+        // Update stats for ghost eating
+        const stats = getStats();
+        stats.totalGhostsEaten++;
+        if (comboCount > stats.bestCombo) stats.bestCombo = comboCount;
+        localStorage.setItem('pacmanStats', JSON.stringify(stats));
+        checkAchievements();
       } else if (ghost.state !== 'eaten') {
         pacmanHit();
         return;
@@ -442,19 +583,308 @@ function drawFloatingTexts(dt) {
 }
 
 function pacmanHit() {
+  if (invincible) return;
   pacman.lives--;
   updateLivesDisplay();
   playDeath();
+  spawnParticles(pacman.x, pacman.y, '#FFFF00', 25);
 
   if (pacman.lives <= 0) {
     gameState = STATE.GAME_OVER;
     playGameOver();
-    showMessage('GAME OVER! 得分: ' + score + ' - 按 Enter 重新开始');
+    showMessage('GAME OVER! 得分: ' + score + ' - 按 Enter 返回菜单');
+    saveScore();
+    saveStats();
+    checkAchievements();
   } else {
+    gameState = STATE.DYING;
+    deathAnimTimer = 0;
+    hideMessage();
+  }
+}
+
+// ===== 死亡动画 =====
+let deathAnimTimer = 0;
+const DEATH_ANIM_DURATION = 1500;
+
+function updateDeathAnimation(dt) {
+  deathAnimTimer += dt;
+  if (deathAnimTimer >= DEATH_ANIM_DURATION) {
     gameState = STATE.READY;
     resetPositions();
     showMessage('按 Enter 继续');
   }
+}
+
+function drawDyingPacman() {
+  const progress = deathAnimTimer / DEATH_ANIM_DURATION;
+  const px = pacman.x * TILE + TILE / 2;
+  const py = pacman.y * TILE + TILE / 2;
+  const radius = (TILE / 2 - 1) * (1 - progress * 0.3);
+  const mouth = progress * Math.PI;
+
+  ctx.fillStyle = '#FFFF00';
+  ctx.globalAlpha = 1 - progress;
+  ctx.beginPath();
+  ctx.arc(px, py, radius, mouth, Math.PI * 2 - mouth);
+  ctx.lineTo(px, py);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+// ===== 粒子系统 =====
+let particles = [];
+
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i + Math.random() * 0.5;
+    const speed = 1 + Math.random() * 3;
+    particles.push({
+      x: x * TILE + TILE / 2,
+      y: y * TILE + TILE / 2,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      color,
+      life: 500 + Math.random() * 300,
+      maxLife: 800,
+      size: 2 + Math.random() * 3
+    });
+  }
+}
+
+function updateParticles(dt) {
+  particles = particles.filter(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.05; // gravity
+    p.life -= dt;
+    return p.life > 0;
+  });
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ===== 连击系统 =====
+let comboCount = 0;
+let comboTimer = 0;
+const COMBO_WINDOW = 1000; // 1秒内连续吃豆子算连击
+
+function updateCombo(dt) {
+  if (comboTimer > 0) {
+    comboTimer -= dt;
+    if (comboTimer <= 0) {
+      comboCount = 0;
+    }
+  }
+}
+
+function addCombo() {
+  comboCount++;
+  comboTimer = COMBO_WINDOW;
+  if (comboCount > 1) {
+    const bonus = comboCount * 5;
+    score += bonus;
+    addFloatingText('COMBO x' + comboCount + ' +' + bonus, pacman.x, pacman.y - 1, '#FF0');
+  }
+}
+
+// ===== 传送门系统 =====
+const TELEPORTERS = [
+  { x1: 5, y1: 10, x2: 22, y2: 10 },
+  { x1: 10, y1: 20, x2: 17, y2: 20 }
+];
+
+function checkTeleporter() {
+  for (const tp of TELEPORTERS) {
+    if (pacman.x === tp.x1 && pacman.y === tp.y1) {
+      pacman.x = tp.x2;
+      pacman.y = tp.y2;
+      spawnParticles(pacman.x, pacman.y, '#0ff', 12);
+      return;
+    }
+    if (pacman.x === tp.x2 && pacman.y === tp.y2) {
+      pacman.x = tp.x1;
+      pacman.y = tp.y1;
+      spawnParticles(pacman.x, pacman.y, '#0ff', 12);
+      return;
+    }
+  }
+}
+
+// ===== 无敌模式（秘籍） =====
+let invincible = false;
+let invincibleTimer = 0;
+const INVINCIBLE_DURATION = 15000;
+const KONAMI_CODE = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+let konamiIndex = 0;
+
+function checkKonamiCode(key) {
+  if (key === KONAMI_CODE[konamiIndex]) {
+    konamiIndex++;
+    if (konamiIndex === KONAMI_CODE.length) {
+      invincible = true;
+      invincibleTimer = INVINCIBLE_DURATION;
+      konamiIndex = 0;
+      showMessage('无敌模式开启！');
+      playAchievement();
+      setTimeout(hideMessage, 2000);
+    }
+  } else {
+    konamiIndex = 0;
+  }
+}
+
+function updateInvincibility(dt) {
+  if (invincible) {
+    invincibleTimer -= dt;
+    if (invincibleTimer <= 0) {
+      invincible = false;
+    }
+  }
+}
+
+// ===== 排行榜系统 =====
+const MAX_SCORES = 10;
+
+function getLeaderboard() {
+  try {
+    return JSON.parse(localStorage.getItem('pacmanLeaderboard')) || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveScore() {
+  const board = getLeaderboard();
+  const entry = { score, level, difficulty, date: new Date().toLocaleDateString() };
+  board.push(entry);
+  board.sort((a, b) => b.score - a.score);
+  localStorage.setItem('pacmanLeaderboard', JSON.stringify(board.slice(0, MAX_SCORES)));
+}
+
+// ===== 数据统计 =====
+function getStats() {
+  try {
+    return JSON.parse(localStorage.getItem('pacmanStats')) || {
+      gamesPlayed: 0, gamesWon: 0, totalScore: 0,
+      totalDotsEaten: 0, totalGhostsEaten: 0, bestCombo: 0
+    };
+  } catch {
+    return {
+      gamesPlayed: 0, gamesWon: 0, totalScore: 0,
+      totalDotsEaten: 0, totalGhostsEaten: 0, bestCombo: 0
+    };
+  }
+}
+
+function saveStats() {
+  const stats = getStats();
+  stats.gamesPlayed++;
+  stats.totalScore += score;
+  stats.totalDotsEaten += dotsEaten;
+  if (gameState === STATE.WIN) stats.gamesWon++;
+  localStorage.setItem('pacmanStats', JSON.stringify(stats));
+}
+
+// ===== 成就系统 =====
+const ACHIEVEMENTS = [
+  { id: 'first_blood', name: '初次击杀', desc: '吃掉第一个鬼魂', check: (s) => s.totalGhostsEaten >= 1 },
+  { id: 'combo_master', name: '连击大师', desc: '达成5连击', check: (s) => s.bestCombo >= 5 },
+  { id: 'speed_runner', name: '速通达人', desc: '3分钟内通关', check: (s) => s.fastestWin && s.fastestWin < 180 },
+  { id: 'dot_hunter', name: '豆子猎人', desc: '累计吃1000个豆子', check: (s) => s.totalDotsEaten >= 1000 },
+  { id: 'ghost_buster', name: '幽灵克星', desc: '累计吃掉50个鬼魂', check: (s) => s.totalGhostsEaten >= 50 },
+  { id: 'pacman_veteran', name: '吃豆老手', desc: '玩50局游戏', check: (s) => s.gamesPlayed >= 50 },
+];
+
+function getUnlockedAchievements() {
+  try {
+    return JSON.parse(localStorage.getItem('pacmanAchievements')) || [];
+  } catch {
+    return [];
+  }
+}
+
+function unlockAchievement(id) {
+  const unlocked = getUnlockedAchievements();
+  if (unlocked.includes(id)) return;
+  unlocked.push(id);
+  localStorage.setItem('pacmanAchievements', JSON.stringify(unlocked));
+  const ach = ACHIEVEMENTS.find(a => a.id === id);
+  if (ach) {
+    addFloatingText('成就: ' + ach.name, 14, 15, '#FFD700');
+    playAchievement();
+  }
+}
+
+function checkAchievements() {
+  const stats = getStats();
+  for (const ach of ACHIEVEMENTS) {
+    if (ach.check(stats)) {
+      unlockAchievement(ach.id);
+    }
+  }
+}
+
+// ===== 隐藏关卡系统 =====
+const HIDDEN_MAZE = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,1,2,1],
+  [1,2,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,0,1,0,0,0,2,0,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,2,1],
+  [1,2,1,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+let isHiddenLevel = false;
+
+function checkHiddenLevel() {
+  // Level 10 unlocks hidden maze
+  if (level === 10 && !isHiddenLevel) {
+    isHiddenLevel = true;
+    showMessage('隐藏关卡解锁！');
+    playAchievement();
+    setTimeout(hideMessage, 2000);
+  }
+}
+
+function getMazeTemplate() {
+  return isHiddenLevel ? HIDDEN_MAZE : MAZE_TEMPLATE;
 }
 
 function resetPositions() {
@@ -463,6 +893,7 @@ function resetPositions() {
   pacman.direction = DIR.LEFT;
   pacman.nextDirection = DIR.LEFT;
   initGhosts();
+  activeFruit = null;
 }
 
 function resetGame() {
@@ -478,7 +909,23 @@ function resetGame() {
 function render(dt) {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  // 主菜单
+  if (gameState === STATE.MENU) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    drawMenu();
+    if (showSettings) drawSettings();
+    if (showLeaderboard) drawLeaderboard();
+    if (showAchievements) drawAchievementsScreen();
+    if (showStats) drawStatsScreen();
+    return;
+  }
+
   drawMaze();
+
+  // 绘制传送门标记
+  drawTeleporters();
 
   if (gameState === STATE.READY || gameState === STATE.PLAYING || gameState === STATE.PAUSED) {
     drawPacman();
@@ -486,16 +933,29 @@ function render(dt) {
       drawGhost(ghost);
     }
     drawFloatingTexts(dt);
+    drawFruit();
+    drawParticles();
+    drawComboDisplay();
+    drawSpeedIndicator();
+  }
+
+  if (gameState === STATE.DYING) {
+    for (const ghost of ghosts) {
+      drawGhost(ghost);
+    }
+    drawDyingPacman();
+    drawParticles();
   }
 
   if (gameState === STATE.PAUSED) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
-    ctx.fillStyle = '#ff0';
-    ctx.font = 'bold 36px Courier New';
-    ctx.textAlign = 'center';
-    ctx.fillText('PAUSED', WIDTH / 2, HEIGHT / 2);
+    drawPauseMenu();
   }
+
+  // 子页面覆盖层
+  if (showSettings) drawSettings();
+  if (showLeaderboard) drawLeaderboard();
+  if (showAchievements) drawAchievementsScreen();
+  if (showStats) drawStatsScreen();
 
   if (gameState === STATE.GAME_OVER) {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
@@ -503,10 +963,12 @@ function render(dt) {
     ctx.fillStyle = '#f00';
     ctx.font = 'bold 42px Courier New';
     ctx.textAlign = 'center';
-    ctx.fillText('GAME OVER', WIDTH / 2, HEIGHT / 2 - 20);
+    ctx.fillText('GAME OVER', WIDTH / 2, HEIGHT / 2 - 40);
     ctx.fillStyle = '#fff';
     ctx.font = '24px Courier New';
-    ctx.fillText('得分: ' + score, WIDTH / 2, HEIGHT / 2 + 20);
+    ctx.fillText('得分: ' + score, WIDTH / 2, HEIGHT / 2);
+    ctx.font = '16px Courier New';
+    ctx.fillText('按 Enter 返回菜单', WIDTH / 2, HEIGHT / 2 + 30);
   }
 
   if (gameState === STATE.WIN) {
@@ -517,46 +979,412 @@ function render(dt) {
     ctx.textAlign = 'center';
     ctx.fillText('LEVEL CLEAR!', WIDTH / 2, HEIGHT / 2);
   }
+
+  // 无敌模式闪烁效果
+  if (invincible && gameState === STATE.PLAYING) {
+    if (Math.floor(Date.now() / 100) % 2 === 0) {
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(pacman.x * TILE + TILE / 2, pacman.y * TILE + TILE / 2, TILE, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
 }
 
 let lastTime = 0;
 function gameLoop(timestamp) {
-  const dt = timestamp - lastTime;
+  const dt = (timestamp - lastTime) * gameSpeed;
   lastTime = timestamp;
 
   if (gameState === STATE.PLAYING) {
     movePacman(dt);
+    checkTeleporter();
     moveGhosts(dt);
     checkPacmanGhostCollision();
+    checkFruitCollision();
+    updateCombo(dt);
+    updateParticles(dt);
+    updateInvincibility(dt);
+
+    if (dotsEaten > 0 && dotsEaten % 50 === 0 && !activeFruit) {
+      spawnFruit();
+    }
+
+    checkHiddenLevel();
+  }
+
+  if (gameState === STATE.DYING) {
+    updateDeathAnimation(dt);
+    updateParticles(dt);
   }
 
   render(dt);
   requestAnimationFrame(gameLoop);
 }
 
-// ===== 键盘输入 =====
+// ===== 传送门标记 =====
+function drawTeleporters() {
+  for (const tp of TELEPORTERS) {
+    const pulse = Math.sin(Date.now() / 300) * 0.3 + 0.7;
+    ctx.fillStyle = `rgba(0, 255, 255, ${pulse * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(tp.x1 * TILE + TILE / 2, tp.y1 * TILE + TILE / 2, TILE / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(tp.x2 * TILE + TILE / 2, tp.y2 * TILE + TILE / 2, TILE / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#0ff';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚡', tp.x1 * TILE + TILE / 2, tp.y1 * TILE + TILE / 2 + 4);
+    ctx.fillText('⚡', tp.x2 * TILE + TILE / 2, tp.y2 * TILE + TILE / 2 + 4);
+  }
+}
+
+// ===== 连击显示 =====
+function drawComboDisplay() {
+  if (comboCount > 1) {
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 16px Courier New';
+    ctx.textAlign = 'left';
+    ctx.fillText('COMBO x' + comboCount, 10, HEIGHT - 10);
+  }
+}
+
+// ===== 速度指示器 =====
+function drawSpeedIndicator() {
+  if (gameSpeed !== 1.0) {
+    ctx.fillStyle = '#0ff';
+    ctx.font = '14px Courier New';
+    ctx.textAlign = 'right';
+    ctx.fillText('速度: ' + gameSpeed.toFixed(1) + 'x', WIDTH - 10, HEIGHT - 10);
+  }
+}
+
+// ===== 主菜单 =====
+function drawMenu() {
+  // 如果正在显示子页面，不绘制主菜单内容
+  if (showSettings || showLeaderboard || showAchievements || showStats) {
+    return;
+  }
+
+  ctx.fillStyle = '#FFFF00';
+  ctx.font = 'bold 48px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('吃 豆 人', WIDTH / 2, 120);
+
+  // 绘制吃豆人动画
+  const t = Date.now() / 200;
+  const mouthAngle = (Math.sin(t) + 1) * 0.2 * Math.PI;
+  ctx.fillStyle = '#FFFF00';
+  ctx.beginPath();
+  ctx.arc(WIDTH / 2, 200, 30, mouthAngle, Math.PI * 2 - mouthAngle);
+  ctx.lineTo(WIDTH / 2, 200);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '18px Courier New';
+  ctx.fillText('按 Enter 开始游戏', WIDTH / 2, 300);
+  ctx.fillText('按 S 设置', WIDTH / 2, 340);
+  ctx.fillText('按 L 排行榜', WIDTH / 2, 380);
+  ctx.fillText('按 A 成就', WIDTH / 2, 420);
+  ctx.fillText('按 T 统计', WIDTH / 2, 460);
+
+  ctx.fillStyle = '#888';
+  ctx.font = '14px Courier New';
+  ctx.fillText('方向键/WASD 移动 | 空格暂停 | ↑↑↓↓←→←→BA 无敌', WIDTH / 2, 540);
+  ctx.fillText('难度: ' + DIFFICULTY_CONFIG[difficulty].label + ' | 音效: ' + (soundEnabled ? '开' : '关'), WIDTH / 2, 570);
+}
+
+// ===== 设置菜单 =====
+let menuSelection = 0;
+let showSettings = false;
+let showLeaderboard = false;
+let showAchievements = false;
+let showStats = false;
+
+function drawSettings() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 30px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('设 置', WIDTH / 2, 80);
+
+  const options = [
+    '难度: ' + DIFFICULTY_CONFIG[difficulty].label + ' (←/→切换)',
+    '音效: ' + (soundEnabled ? '开' : '关') + ' (S切换)',
+    '速度: ' + gameSpeed.toFixed(1) + 'x (+/-调整)',
+    '',
+    '按 Enter 返回'
+  ];
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '18px Courier New';
+  options.forEach((opt, i) => {
+    if (opt) {
+      ctx.fillText(opt, WIDTH / 2, 160 + i * 50);
+    }
+  });
+}
+
+function drawLeaderboard() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 28px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('排 行 榜', WIDTH / 2, 50);
+
+  const board = getLeaderboard();
+  ctx.font = '16px Courier New';
+  ctx.textAlign = 'left';
+
+  if (board.length === 0) {
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'center';
+    ctx.fillText('暂无记录', WIDTH / 2, 150);
+  } else {
+    board.forEach((entry, i) => {
+      const medals = ['🥇', '', '🥉'];
+      const rank = i < 3 ? medals[i] : (i + 1) + '.';
+      ctx.fillStyle = i === 0 ? '#FFD700' : '#fff';
+      ctx.fillText(rank + ' ' + entry.score + '分  Lv.' + entry.level + ' [' + entry.difficulty + '] ' + entry.date, 60, 100 + i * 35);
+    });
+  }
+
+  ctx.fillStyle = '#888';
+  ctx.textAlign = 'center';
+  ctx.fillText('按 Enter 返回', WIDTH / 2, 480);
+}
+
+function drawAchievementsScreen() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 28px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('成 就', WIDTH / 2, 50);
+
+  const unlocked = getUnlockedAchievements();
+  ctx.font = '14px Courier New';
+  ctx.textAlign = 'left';
+
+  ACHIEVEMENTS.forEach((ach, i) => {
+    const isUnlocked = unlocked.includes(ach.id);
+    ctx.fillStyle = isUnlocked ? '#0f0' : '#555';
+    ctx.fillText((isUnlocked ? '✓' : '○') + ' ' + ach.name + ' - ' + ach.desc, 40, 100 + i * 40);
+  });
+
+  ctx.fillStyle = '#888';
+  ctx.textAlign = 'center';
+  ctx.fillText('按 Enter 返回', WIDTH / 2, 480);
+}
+
+function drawStatsScreen() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 28px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('统 计', WIDTH / 2, 50);
+
+  const stats = getStats();
+  const lines = [
+    '游戏局数: ' + stats.gamesPlayed,
+    '通关次数: ' + stats.gamesWon,
+    '总得分: ' + stats.totalScore,
+    '总吃豆子: ' + stats.totalDotsEaten,
+    '总吃鬼魂: ' + stats.totalGhostsEaten,
+    '最佳连击: ' + stats.bestCombo
+  ];
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '18px Courier New';
+  ctx.textAlign = 'center';
+  lines.forEach((line, i) => {
+    ctx.fillText(line, WIDTH / 2, 120 + i * 45);
+  });
+
+  ctx.fillStyle = '#888';
+  ctx.fillText('按 Enter 返回', WIDTH / 2, 480);
+}
+
+// ===== 暂停菜单 =====
+function drawPauseMenu() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.fillStyle = '#ff0';
+  ctx.font = 'bold 36px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('PAUSED', WIDTH / 2, HEIGHT / 2 - 20);
+  ctx.font = '18px Courier New';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('空格继续 | Enter 返回菜单', WIDTH / 2, HEIGHT / 2 + 20);
+}
 document.addEventListener('keydown', (e) => {
+  // ===== 菜单状态 =====
+  if (gameState === STATE.MENU) {
+    switch (e.key) {
+      case 'Enter':
+        initAudio();
+        resetGame();
+        gameState = STATE.PLAYING;
+        hideMessage();
+        playGameStart();
+        break;
+      case 's': case 'S':
+        showSettings = true;
+        showLeaderboard = false;
+        showAchievements = false;
+        showStats = false;
+        break;
+      case 'l': case 'L':
+        showSettings = false;
+        showLeaderboard = true;
+        showAchievements = false;
+        showStats = false;
+        break;
+      case 'a': case 'A':
+        showSettings = false;
+        showLeaderboard = false;
+        showAchievements = true;
+        showStats = false;
+        break;
+      case 't': case 'T':
+        showSettings = false;
+        showLeaderboard = false;
+        showAchievements = false;
+        showStats = true;
+        break;
+    }
+    // 设置子菜单
+    if (showSettings) {
+      switch (e.key) {
+        case 'ArrowLeft': case 'ArrowRight':
+          const diffs = [DIFFICULTY.EASY, DIFFICULTY.NORMAL, DIFFICULTY.HARD];
+          const idx = (diffs.indexOf(difficulty) + (e.key === 'ArrowRight' ? 1 : -1) + diffs.length) % diffs.length;
+          difficulty = diffs[idx];
+          localStorage.setItem('pacmanDifficulty', difficulty);
+          break;
+        case 's': case 'S':
+          soundEnabled = !soundEnabled;
+          localStorage.setItem('pacmanSound', soundEnabled);
+          if (soundEnabled) { initAudio(); playTone(440, 0.1, 'square', 0.1); }
+          break;
+        case '+': case '=':
+          gameSpeed = Math.min(3.0, gameSpeed + 0.1);
+          break;
+        case '-': case '_':
+          gameSpeed = Math.max(0.5, gameSpeed - 0.1);
+          break;
+        case 'Enter':
+          showSettings = false;
+          break;
+      }
+      e.preventDefault();
+    }
+    // 子页面统一 Enter 返回
+    if (showLeaderboard || showAchievements || showStats) {
+      if (e.key === 'Enter') {
+        showLeaderboard = false;
+        showAchievements = false;
+        showStats = false;
+      }
+    }
+    return;
+  }
+
+  // ===== 设置覆盖层（游戏中按Esc打开/关闭） =====
+  if (showSettings && gameState !== STATE.MENU) {
+    switch (e.key) {
+      case 'ArrowLeft': case 'ArrowRight':
+        const diffs = [DIFFICULTY.EASY, DIFFICULTY.NORMAL, DIFFICULTY.HARD];
+        const idx = (diffs.indexOf(difficulty) + (e.key === 'ArrowRight' ? 1 : -1) + diffs.length) % diffs.length;
+        difficulty = diffs[idx];
+        localStorage.setItem('pacmanDifficulty', difficulty);
+        break;
+      case 's': case 'S':
+        soundEnabled = !soundEnabled;
+        localStorage.setItem('pacmanSound', soundEnabled);
+        if (soundEnabled) { initAudio(); playTone(440, 0.1, 'square', 0.1); }
+        break;
+      case '+': case '=':
+        gameSpeed = Math.min(3.0, gameSpeed + 0.1);
+        break;
+      case '-': case '_':
+        gameSpeed = Math.max(0.5, gameSpeed - 0.1);
+        break;
+      case 'Enter': case 'Escape':
+        showSettings = false;
+        break;
+    }
+    e.preventDefault();
+    return;
+  }
+
+  // 游戏中按Esc打开设置
+  if ((gameState === STATE.PLAYING || gameState === STATE.READY) && (e.key === 'Escape')) {
+    showSettings = true;
+    showLeaderboard = false;
+    showAchievements = false;
+    showStats = false;
+    e.preventDefault();
+    return;
+  }
+
+  // ===== 子页面（排行榜/成就/统计） =====
+  if (showLeaderboard || showAchievements || showStats) {
+    if (e.key === 'Enter') {
+      showLeaderboard = false;
+      showAchievements = false;
+      showStats = false;
+    }
+    e.preventDefault();
+    return;
+  }
+
+  // ===== 游戏进行中 =====
   switch (e.key) {
     case 'ArrowUp': case 'w': case 'W':
-      pacman.nextDirection = DIR.UP;
+      if (gameState === STATE.PLAYING || gameState === STATE.READY) {
+        pacman.nextDirection = DIR.UP;
+      }
+      checkKonamiCode(e.key);
       e.preventDefault();
       break;
     case 'ArrowDown': case 's': case 'S':
-      pacman.nextDirection = DIR.DOWN;
+      if (gameState === STATE.PLAYING || gameState === STATE.READY) {
+        pacman.nextDirection = DIR.DOWN;
+      }
+      checkKonamiCode(e.key);
       e.preventDefault();
       break;
     case 'ArrowLeft': case 'a': case 'A':
-      pacman.nextDirection = DIR.LEFT;
+      if (gameState === STATE.PLAYING || gameState === STATE.READY) {
+        pacman.nextDirection = DIR.LEFT;
+      }
+      checkKonamiCode(e.key);
       e.preventDefault();
       break;
     case 'ArrowRight': case 'd': case 'D':
-      pacman.nextDirection = DIR.RIGHT;
+      if (gameState === STATE.PLAYING || gameState === STATE.READY) {
+        pacman.nextDirection = DIR.RIGHT;
+      }
+      checkKonamiCode(e.key);
       e.preventDefault();
       break;
     case ' ':
       if (gameState === STATE.PLAYING) {
         gameState = STATE.PAUSED;
-        showMessage('游戏暂停 - 按空格继续');
+        hideMessage();
       } else if (gameState === STATE.PAUSED) {
         gameState = STATE.PLAYING;
         hideMessage();
@@ -571,9 +1399,12 @@ document.addEventListener('keydown', (e) => {
         playGameStart();
       } else if (gameState === STATE.GAME_OVER || gameState === STATE.WIN) {
         resetGame();
-        gameState = STATE.PLAYING;
+        gameState = STATE.MENU;
         hideMessage();
-        playGameStart();
+      } else if (gameState === STATE.PAUSED) {
+        resetGame();
+        gameState = STATE.MENU;
+        hideMessage();
       }
       e.preventDefault();
       break;
@@ -613,6 +1444,12 @@ let modeTimer = 0;
 let frightenedTimer = 0;
 let frightenedGhostIndex = 0;
 let ghostMoveTimers = [0, 0, 0, 0];
+
+// Classic 4-ghost AI: each ghost has unique behavior
+// Blinky (red) - directly chases Pacman
+// Pinky (pink) - targets 4 tiles ahead of Pacman
+// Inky (cyan) - uses Blinky position + Pacman direction for complex targeting
+// Clyde (orange) - chases when far, scatters when close
 
 const GHOST_MOVE_INTERVAL = 180;
 const GHOST_FRIGHTENED_INTERVAL = 250;
@@ -716,7 +1553,35 @@ function getGhostTarget(ghost, index) {
   if (ghost.state === 'eaten') return { x: 14, y: 14 };
   if (ghost.state === 'frightened') return null;
   if (ghost.state === 'scatter') return SCATTER_TARGETS[index];
-  return { x: pacman.x, y: pacman.y };
+
+  // CHASE mode - each ghost has unique targeting
+  switch (index) {
+    case 0: // Blinky - direct chase
+      return { x: pacman.x, y: pacman.y };
+
+    case 1: // Pinky - targets 4 tiles ahead
+      return {
+        x: pacman.x + pacman.direction.x * 4,
+        y: pacman.y + pacman.direction.y * 4
+      };
+
+    case 2: // Inky - complex: uses Blinky position as pivot
+      const blinky = ghosts[0];
+      const pivotX = pacman.x + pacman.direction.x * 2;
+      const pivotY = pacman.y + pacman.direction.y * 2;
+      return {
+        x: pivotX * 2 - blinky.x,
+        y: pivotY * 2 - blinky.y
+      };
+
+    case 3: // Clyde - chases when far (>8 tiles), scatters when close
+      const dist = manhattanDistance(ghost.x, ghost.y, pacman.x, pacman.y);
+      if (dist > 8) return { x: pacman.x, y: pacman.y };
+      return SCATTER_TARGETS[3];
+
+    default:
+      return { x: pacman.x, y: pacman.y };
+  }
 }
 
 function chooseDirection(ghost, index) {
@@ -757,7 +1622,8 @@ function chooseDirection(ghost, index) {
 }
 
 function activateFrightened() {
-  frightenedTimer = FRIGHTENED_DURATION;
+  const config = getDifficultyConfig();
+  frightenedTimer = config.frightenedDuration;
   frightenedGhostIndex = 0;
   for (const ghost of ghosts) {
     if (ghost.state !== 'eaten') {
@@ -768,8 +1634,10 @@ function activateFrightened() {
 }
 
 function moveGhosts(dt) {
+  const config = getDifficultyConfig();
+
   modeTimer += dt;
-  if (modeTimer > MODE_SWITCH_INTERVAL) {
+  if (modeTimer > config.scatterDuration) {
     modeTimer = 0;
     ghostMode = ghostMode === 'scatter' ? 'chase' : 'scatter';
     for (const ghost of ghosts) {
@@ -792,7 +1660,7 @@ function moveGhosts(dt) {
 
   for (let i = 0; i < ghosts.length; i++) {
     const ghost = ghosts[i];
-    const interval = ghost.state === 'frightened' ? GHOST_FRIGHTENED_INTERVAL : GHOST_MOVE_INTERVAL;
+    let interval = ghost.state === 'frightened' ? config.frightenedSpeed : config.ghostSpeed;
 
     ghostMoveTimers[i] += dt;
     if (ghostMoveTimers[i] < interval) continue;
@@ -848,10 +1716,12 @@ function updateLevelDisplay() {
 
 function showMessage(text) {
   document.getElementById('message').textContent = text;
+  document.getElementById('message').style.display = 'block';
 }
 
 function hideMessage() {
   document.getElementById('message').textContent = '';
+  document.getElementById('message').style.display = 'none';
 }
 
 // ===== 启动 =====
@@ -860,6 +1730,7 @@ initGhosts();
 document.getElementById('highScore').textContent = highScore;
 console.log('迷宫初始化完成, 总豆子数:', totalDots);
 updateLivesDisplay();
+hideMessage();
 lastTime = performance.now();
 requestAnimationFrame(gameLoop);
 </script>
